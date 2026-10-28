@@ -1,17 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { supabase } from './lib/supabase';
 import './index.css';
 
-const STORAGE_KEY = 'control-clientes-v1';
-
-function loadClients() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
+// ---------- Utilidades ----------
 const money = (value) =>
   new Intl.NumberFormat('es-AR', {
     style: 'currency',
@@ -24,52 +15,133 @@ const dateLabel = (date) =>
 
 const today = () => new Date().toLocaleDateString('en-CA');
 
-function balance(loan) {
-  return loan.capital + loan.interest - loan.paid;
-}
+const paidOf = (loan) =>
+  loan.payments.reduce((sum, payment) => sum + Number(payment.amount), 0);
+
+const balance = (loan) =>
+  Number(loan.capital) + Number(loan.interest) - paidOf(loan);
 
 const totalDebt = (client) =>
   client.loans.reduce((sum, loan) => sum + balance(loan), 0);
 
+// Días de atraso: solo si el préstamo tiene vencimiento, ya pasó y todavía hay saldo
+const daysLate = (loan) => {
+  if (!loan.due_date || balance(loan) <= 0) return 0;
+  const diff = Math.floor(
+    (new Date(today() + 'T12:00:00') - new Date(loan.due_date + 'T12:00:00')) /
+      86400000
+  );
+  return diff > 0 ? diff : 0;
+};
+
+const clientLate = (client) => client.loans.some((loan) => daysLate(loan) > 0);
+
+const LATE_COLOR = '#c0392b';
+const linkButton = {
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  color: 'inherit',
+  textDecoration: 'underline',
+  cursor: 'pointer',
+  fontSize: '0.85rem',
+};
+
+const emptyForm = {
+  name: '',
+  phone: '',
+  notes: '',
+  capital: '',
+  interest: '',
+  dueDate: '',
+  agreement: '',
+  loanId: '',
+  amount: '',
+  payDate: '',
+};
+
 export default function App() {
-  // ---- Estado ----
-  const [clients, setClients] = useState(loadClients);
+  // ---------- Sesión ----------
+  const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+
+  // ---------- Datos ----------
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState(null);
 
-  const [showForm, setShowForm] = useState(false);
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [notes, setNotes] = useState('');
+  // ---------- Formularios ----------
+  // panel: null | 'newClient' | 'editClient' | 'newLoan' | 'editLoan' | 'pay'
+  const [panel, setPanel] = useState(null);
+  const [form, setForm] = useState(emptyForm);
+  const [editingLoanId, setEditingLoanId] = useState(null);
+  const setField = (key) => (event) =>
+    setForm((previous) => ({ ...previous, [key]: event.target.value }));
 
-  const [showLoanForm, setShowLoanForm] = useState(false);
-  const [loanCapital, setLoanCapital] = useState('');
-  const [loanInterest, setLoanInterest] = useState('');
-
-  const [showPayForm, setShowPayForm] = useState(false);
-  const [payLoanId, setPayLoanId] = useState('');
-  const [payAmount, setPayAmount] = useState('');
-
-  // ---- Guardado automático en este navegador ----
+  // ---------- Sesión: escuchar entrada y salida ----------
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(clients));
-    } catch {
-      // si el navegador no permite guardar, la app sigue funcionando
-    }
-  }, [clients]);
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setAuthReady(true);
+    });
 
-  // ---- Datos derivados ----
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, next) => {
+      setSession(next);
+    });
+
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  // ---------- Cargar clientes con sus préstamos y pagos ----------
+  const loadData = useCallback(async () => {
+    const { data, error: loadError } = await supabase
+      .from('clients')
+      .select('*, loans(*, payments(*))')
+      .order('name');
+
+    if (loadError) {
+      setError('No se pudieron cargar los datos: ' + loadError.message);
+      setLoading(false);
+      return;
+    }
+
+    setClients(
+      data.map((client) => ({
+        ...client,
+        loans: (client.loans || [])
+          .map((loan) => ({ ...loan, payments: loan.payments || [] }))
+          .sort((a, b) => b.loan_date.localeCompare(a.loan_date)),
+      }))
+    );
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (session) {
+      setLoading(true);
+      loadData();
+    } else {
+      setClients([]);
+      setSelectedId(null);
+    }
+  }, [session, loadData]);
+
+  // ---------- Datos derivados ----------
   const filteredClients = useMemo(() => {
     const query = search.trim().toLowerCase();
-
     return clients.filter(
       (client) =>
         client.name.toLowerCase().includes(query) ||
-        client.phone.includes(query) ||
-        String(client.id).includes(query)
+        client.phone.includes(query)
     );
   }, [clients, search]);
+
+  const lateClients = clients.filter(clientLate);
 
   const selected = clients.find((client) => client.id === selectedId);
 
@@ -77,101 +149,264 @@ export default function App() {
     ? selected.loans.filter((loan) => balance(loan) > 0)
     : [];
 
-  const activeLoanId = openLoans.some((loan) => String(loan.id) === payLoanId)
-    ? payLoanId
-    : String(openLoans[0]?.id ?? '');
+  const activeLoanId = openLoans.some((loan) => loan.id === form.loanId)
+    ? form.loanId
+    : openLoans[0]?.id ?? '';
 
-  const activeLoan = openLoans.find((loan) => String(loan.id) === activeLoanId);
+  const activeLoan = openLoans.find((loan) => loan.id === activeLoanId);
 
-  // ---- Acciones ----
-  function updateSelected(change) {
-    setClients((previous) =>
-      previous.map((client) => (client.id === selectedId ? change(client) : client))
-    );
+  const history = selected
+    ? [
+        {
+          id: 'c-' + selected.id,
+          date: new Date(selected.created_at).toLocaleDateString('en-CA'),
+          type: 'Cliente creado',
+          amount: 0,
+        },
+        ...selected.loans.map((loan) => ({
+          id: 'l-' + loan.id,
+          date: loan.loan_date,
+          type: 'Préstamo registrado',
+          amount: Number(loan.capital),
+        })),
+        ...selected.loans.flatMap((loan) =>
+          loan.payments.map((payment) => ({
+            id: 'p-' + payment.id,
+            date: payment.payment_date,
+            type: 'Pago recibido',
+            amount: Number(payment.amount),
+            paymentId: payment.id,
+          }))
+        ),
+      ].sort((a, b) => b.date.localeCompare(a.date))
+    : [];
+
+  // ---------- Acciones ----------
+  async function run(action) {
+    setError('');
+    const { error: actionError } = await action;
+    if (actionError) {
+      setError('No se pudo guardar: ' + actionError.message);
+      return false;
+    }
+    await loadData();
+    return true;
+  }
+
+  function closePanel() {
+    setPanel(null);
+    setForm(emptyForm);
+    setEditingLoanId(null);
   }
 
   function selectClient(id) {
     setSelectedId(id);
-    setShowLoanForm(false);
-    setShowPayForm(false);
+    closePanel();
   }
 
-  function addClient(event) {
+  async function handleLogin(event) {
     event.preventDefault();
+    setAuthError('');
+    const { error: loginError } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+    if (loginError) {
+      setAuthError('Email o contraseña incorrectos.');
+      return;
+    }
+    setPassword('');
+  }
 
-    if (!name.trim()) return;
+  async function saveClient(event) {
+    event.preventDefault();
+    if (!form.name.trim()) return;
 
-    const id = Date.now();
-    const client = {
-      id,
-      name: name.trim(),
-      phone: phone.trim(),
-      notes: notes.trim(),
-      loans: [],
-      history: [
-        { id: id + 1, date: today(), type: 'Cliente creado', amount: 0 },
-      ],
+    const values = {
+      name: form.name.trim(),
+      phone: form.phone.trim(),
+      notes: form.notes.trim(),
     };
 
-    setClients((previous) => [...previous, client]);
-    selectClient(id);
+    if (panel === 'editClient') {
+      if (await run(supabase.from('clients').update(values).eq('id', selected.id))) {
+        closePanel();
+      }
+      return;
+    }
+
+    const { data, error: insertError } = await supabase
+      .from('clients')
+      .insert(values)
+      .select()
+      .single();
+
+    if (insertError) {
+      setError('No se pudo guardar: ' + insertError.message);
+      return;
+    }
+
+    await loadData();
     setSearch('');
-    setName('');
-    setPhone('');
-    setNotes('');
-    setShowForm(false);
+    selectClient(data.id);
   }
 
-  function addLoan(event) {
-    event.preventDefault();
+  async function removeClient() {
+    if (
+      !window.confirm(
+        `¿Eliminar a ${selected.name}? Se borran también todos sus préstamos y pagos.`
+      )
+    )
+      return;
 
-    const capital = Number(loanCapital);
-    const interest = Number(loanInterest) || 0;
-    if (!selected || capital <= 0) return;
-
-    const id = Date.now();
-    const date = today();
-
-    updateSelected((client) => ({
-      ...client,
-      loans: [...client.loans, { id, capital, interest, paid: 0, date }],
-      history: [
-        ...client.history,
-        { id: id + 1, date, type: 'Préstamo registrado', amount: capital },
-      ],
-    }));
-
-    setLoanCapital('');
-    setLoanInterest('');
-    setShowLoanForm(false);
+    if (await run(supabase.from('clients').delete().eq('id', selected.id))) {
+      setSelectedId(null);
+      closePanel();
+    }
   }
 
-  function addPayment(event) {
+  async function saveLoan(event) {
     event.preventDefault();
 
-    const amount = Number(payAmount);
+    const capital = Number(form.capital);
+    const interest = Number(form.interest) || 0;
+    if (capital <= 0) return;
+
+    const values = {
+      capital,
+      interest,
+      due_date: form.dueDate || null,
+      notes: form.agreement.trim(),
+    };
+
+    const action =
+      panel === 'editLoan'
+        ? supabase.from('loans').update(values).eq('id', editingLoanId)
+        : supabase
+            .from('loans')
+            .insert({ ...values, client_id: selected.id, loan_date: today() });
+
+    if (await run(action)) closePanel();
+  }
+
+  async function removeLoan(loan) {
+    if (
+      !window.confirm(
+        `¿Eliminar el préstamo del ${dateLabel(loan.loan_date)}? Se borran también sus pagos.`
+      )
+    )
+      return;
+    await run(supabase.from('loans').delete().eq('id', loan.id));
+  }
+
+  async function savePayment(event) {
+    event.preventDefault();
+
+    const amount = Number(form.amount);
     if (!activeLoan || amount <= 0) return;
 
     // No se puede pagar más de lo que se debe en ese préstamo
     const applied = Math.min(amount, balance(activeLoan));
-    const date = today();
 
-    updateSelected((client) => ({
-      ...client,
-      loans: client.loans.map((loan) =>
-        loan.id === activeLoan.id ? { ...loan, paid: loan.paid + applied } : loan
-      ),
-      history: [
-        ...client.history,
-        { id: Date.now(), date, type: 'Pago recibido', amount: applied },
-      ],
-    }));
-
-    setPayAmount('');
-    setShowPayForm(false);
+    const saved = await run(
+      supabase.from('payments').insert({
+        loan_id: activeLoan.id,
+        amount: applied,
+        payment_date: form.payDate || today(),
+      })
+    );
+    if (saved) closePanel();
   }
 
-  // ---- Pantalla ----
+  async function removePayment(paymentId) {
+    if (!window.confirm('¿Eliminar este pago?')) return;
+    await run(supabase.from('payments').delete().eq('id', paymentId));
+  }
+
+  function openEditClient() {
+    setForm({
+      ...emptyForm,
+      name: selected.name,
+      phone: selected.phone,
+      notes: selected.notes,
+    });
+    setPanel('editClient');
+  }
+
+  function openEditLoan(loan) {
+    setForm({
+      ...emptyForm,
+      capital: String(loan.capital),
+      interest: String(loan.interest),
+      dueDate: loan.due_date || '',
+      agreement: loan.notes,
+    });
+    setEditingLoanId(loan.id);
+    setPanel('editLoan');
+  }
+
+  // ---------- Pantalla de ingreso ----------
+  if (!authReady) {
+    return (
+      <main className="app-shell">
+        <p className="empty-state">Cargando...</p>
+      </main>
+    );
+  }
+
+  if (!session) {
+    return (
+      <main className="app-shell">
+        <header className="topbar">
+          <div className="brand">
+            <div className="brand-icon">C</div>
+            <div>
+              <strong>Control de clientes</strong>
+              <span>Gestión de préstamos</span>
+            </div>
+          </div>
+        </header>
+
+        <section className="welcome">
+          <h1>Ingresar</h1>
+          <p>Usá tu email y contraseña para ver tus clientes.</p>
+        </section>
+
+        <form
+          className="client-form"
+          onSubmit={handleLogin}
+          style={{ maxWidth: '420px', margin: '0 auto' }}
+        >
+          <label>
+            Email
+            <input
+              required
+              type="email"
+              autoComplete="username"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+            />
+          </label>
+          <label>
+            Contraseña
+            <input
+              required
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+          </label>
+          {authError && <p style={{ color: LATE_COLOR }}>{authError}</p>}
+          <button className="primary-button" type="submit">
+            Ingresar
+          </button>
+        </form>
+      </main>
+    );
+  }
+
+  // ---------- Pantalla principal ----------
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -182,12 +417,16 @@ export default function App() {
             <span>Gestión de préstamos</span>
           </div>
         </div>
+        <button className="primary-button" onClick={() => supabase.auth.signOut()}>
+          Salir
+        </button>
       </header>
 
       <section className="welcome">
         <p className="eyebrow">PANEL DE GESTIÓN</p>
         <h1>Clientes</h1>
         <p>Encontrá una ficha y consultá su historial.</p>
+        {error && <p style={{ color: LATE_COLOR }}>{error}</p>}
       </section>
 
       <section className="workspace">
@@ -196,7 +435,14 @@ export default function App() {
             <h2>Mis clientes</h2>
             <button
               className="primary-button"
-              onClick={() => setShowForm(!showForm)}
+              onClick={() => {
+                if (panel === 'newClient') {
+                  closePanel();
+                } else {
+                  setForm(emptyForm);
+                  setPanel('newClient');
+                }
+              }}
             >
               + Agregar
             </button>
@@ -204,36 +450,59 @@ export default function App() {
 
           <input
             className="search-input"
-            placeholder="Buscar por nombre, teléfono o ID..."
+            placeholder="Buscar por nombre o teléfono..."
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
 
-          {showForm && (
-            <form className="client-form" onSubmit={addClient}>
-              <h3>Nuevo cliente</h3>
+          {lateClients.length > 0 && (
+            <div className="notes-box">
+              <strong style={{ color: LATE_COLOR }}>
+                Atrasos ({lateClients.length})
+              </strong>
+              <p>
+                {lateClients.map((client, index) => (
+                  <span key={client.id}>
+                    {index > 0 && ' · '}
+                    <button
+                      style={linkButton}
+                      onClick={() => selectClient(client.id)}
+                    >
+                      {client.name}
+                    </button>
+                  </span>
+                ))}
+              </p>
+            </div>
+          )}
+
+          {(panel === 'newClient' || panel === 'editClient') && (
+            <form className="client-form" onSubmit={saveClient}>
+              <h3>
+                {panel === 'newClient' ? 'Nuevo cliente' : 'Editar cliente'}
+              </h3>
               <label>
                 Nombre completo *
                 <input
                   required
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
+                  value={form.name}
+                  onChange={setField('name')}
                   placeholder="Ej. Carlos Rodríguez"
                 />
               </label>
               <label>
                 Teléfono
                 <input
-                  value={phone}
-                  onChange={(event) => setPhone(event.target.value)}
+                  value={form.phone}
+                  onChange={setField('phone')}
                   placeholder="Número de contacto"
                 />
               </label>
               <label>
                 Observaciones
                 <textarea
-                  value={notes}
-                  onChange={(event) => setNotes(event.target.value)}
+                  value={form.notes}
+                  onChange={setField('notes')}
                   placeholder="Notas opcionales"
                 />
               </label>
@@ -259,6 +528,9 @@ export default function App() {
                   <strong>{client.name}</strong>
                   <small>{client.phone || 'Sin teléfono'}</small>
                   <small>{client.loans.length} préstamo(s)</small>
+                  {clientLate(client) && (
+                    <small style={{ color: LATE_COLOR }}>Atrasado</small>
+                  )}
                 </span>
                 <span className="client-balance">
                   {money(totalDebt(client))}
@@ -266,14 +538,16 @@ export default function App() {
               </button>
             ))}
 
-            {clients.length === 0 && (
+            {loading && <p className="empty-state">Cargando clientes...</p>}
+
+            {!loading && clients.length === 0 && (
               <p className="empty-state">
                 Todavía no cargaste clientes. Tocá «+ Agregar» para crear el
                 primero.
               </p>
             )}
 
-            {clients.length > 0 && filteredClients.length === 0 && (
+            {!loading && clients.length > 0 && filteredClients.length === 0 && (
               <p className="empty-state">
                 No encontramos clientes con esa búsqueda.
               </p>
@@ -295,9 +569,21 @@ export default function App() {
                   {selected.name.charAt(0).toUpperCase()}
                 </div>
                 <div>
-                  <p className="eyebrow">FICHA #{selected.id}</p>
+                  <p className="eyebrow">FICHA</p>
                   <h2>{selected.name}</h2>
                   <p>{selected.phone || 'Sin teléfono registrado'}</p>
+                  <p>
+                    <button style={linkButton} onClick={openEditClient}>
+                      Editar
+                    </button>
+                    {' · '}
+                    <button
+                      style={{ ...linkButton, color: LATE_COLOR }}
+                      onClick={removeClient}
+                    >
+                      Eliminar cliente
+                    </button>
+                  </p>
                 </div>
               </div>
 
@@ -308,13 +594,13 @@ export default function App() {
                 </div>
               )}
 
-              {/* Acciones del día: nueva deuda o pago */}
+              {/* Acciones del día */}
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                 <button
                   className="primary-button"
                   onClick={() => {
-                    setShowLoanForm(!showLoanForm);
-                    setShowPayForm(false);
+                    setForm(emptyForm);
+                    setPanel('newLoan');
                   }}
                 >
                   + Nuevo préstamo
@@ -323,25 +609,29 @@ export default function App() {
                   className="primary-button"
                   disabled={openLoans.length === 0}
                   onClick={() => {
-                    setShowPayForm(!showPayForm);
-                    setShowLoanForm(false);
+                    setForm({ ...emptyForm, payDate: today() });
+                    setPanel('pay');
                   }}
                 >
                   Registrar pago
                 </button>
               </div>
 
-              {showLoanForm && (
-                <form className="client-form" onSubmit={addLoan}>
-                  <h3>Nuevo préstamo para {selected.name}</h3>
+              {(panel === 'newLoan' || panel === 'editLoan') && (
+                <form className="client-form" onSubmit={saveLoan}>
+                  <h3>
+                    {panel === 'newLoan'
+                      ? `Nuevo préstamo para ${selected.name}`
+                      : 'Editar préstamo'}
+                  </h3>
                   <label>
                     Capital *
                     <input
                       required
                       type="number"
                       min="1"
-                      value={loanCapital}
-                      onChange={(event) => setLoanCapital(event.target.value)}
+                      value={form.capital}
+                      onChange={setField('capital')}
                       placeholder="Monto prestado"
                     />
                   </label>
@@ -350,9 +640,25 @@ export default function App() {
                     <input
                       type="number"
                       min="0"
-                      value={loanInterest}
-                      onChange={(event) => setLoanInterest(event.target.value)}
-                      placeholder="Monto de interés (opcional)"
+                      value={form.interest}
+                      onChange={setField('interest')}
+                      placeholder="Monto de interés (lo definís vos)"
+                    />
+                  </label>
+                  <label>
+                    Vencimiento
+                    <input
+                      type="date"
+                      value={form.dueDate}
+                      onChange={setField('dueDate')}
+                    />
+                  </label>
+                  <label>
+                    Acuerdo
+                    <textarea
+                      value={form.agreement}
+                      onChange={setField('agreement')}
+                      placeholder="Ej. paga $5.000 por día, o en 4 cuotas semanales"
                     />
                   </label>
                   <button className="primary-button" type="submit">
@@ -361,18 +667,15 @@ export default function App() {
                 </form>
               )}
 
-              {showPayForm && activeLoan && (
-                <form className="client-form" onSubmit={addPayment}>
+              {panel === 'pay' && activeLoan && (
+                <form className="client-form" onSubmit={savePayment}>
                   <h3>Registrar pago de {selected.name}</h3>
                   <label>
                     Préstamo
-                    <select
-                      value={activeLoanId}
-                      onChange={(event) => setPayLoanId(event.target.value)}
-                    >
+                    <select value={activeLoanId} onChange={setField('loanId')}>
                       {openLoans.map((loan) => (
                         <option key={loan.id} value={loan.id}>
-                          #{loan.id} · {dateLabel(loan.date)} · debe{' '}
+                          Del {dateLabel(loan.loan_date)} · debe{' '}
                           {money(balance(loan))}
                         </option>
                       ))}
@@ -385,9 +688,17 @@ export default function App() {
                       type="number"
                       min="1"
                       max={balance(activeLoan)}
-                      value={payAmount}
-                      onChange={(event) => setPayAmount(event.target.value)}
+                      value={form.amount}
+                      onChange={setField('amount')}
                       placeholder={`Hasta ${money(balance(activeLoan))}`}
+                    />
+                  </label>
+                  <label>
+                    Fecha del pago
+                    <input
+                      type="date"
+                      value={form.payDate}
+                      onChange={setField('payDate')}
                     />
                   </label>
                   <button className="primary-button" type="submit">
@@ -404,61 +715,94 @@ export default function App() {
                     Este cliente todavía no tiene préstamos registrados.
                   </div>
                 ) : (
-                  selected.loans.map((loan) => (
-                    <article className="loan-card" key={loan.id}>
-                      <div className="loan-title">
-                        <strong>Préstamo #{loan.id}</strong>
-                        <span>{dateLabel(loan.date)}</span>
-                      </div>
-                      <div className="loan-grid">
-                        <div>
-                          <small>Capital</small>
-                          <strong>{money(loan.capital)}</strong>
-                        </div>
-                        <div>
-                          <small>Interés</small>
-                          <strong>{money(loan.interest)}</strong>
-                        </div>
-                        <div>
-                          <small>Pagado</small>
-                          <strong>{money(loan.paid)}</strong>
-                        </div>
-                        <div>
-                          <small>Saldo pendiente</small>
-                          <strong className="debt">
-                            {money(balance(loan))}
+                  selected.loans.map((loan) => {
+                    const late = daysLate(loan);
+                    return (
+                      <article className="loan-card" key={loan.id}>
+                        <div className="loan-title">
+                          <strong>
+                            Préstamo del {dateLabel(loan.loan_date)}
                           </strong>
+                          <span>
+                            <button
+                              style={linkButton}
+                              onClick={() => openEditLoan(loan)}
+                            >
+                              Editar
+                            </button>
+                            {' · '}
+                            <button
+                              style={{ ...linkButton, color: LATE_COLOR }}
+                              onClick={() => removeLoan(loan)}
+                            >
+                              Eliminar
+                            </button>
+                          </span>
                         </div>
-                      </div>
-                    </article>
-                  ))
+                        <div className="loan-grid">
+                          <div>
+                            <small>Capital</small>
+                            <strong>{money(loan.capital)}</strong>
+                          </div>
+                          <div>
+                            <small>Interés</small>
+                            <strong>{money(loan.interest)}</strong>
+                          </div>
+                          <div>
+                            <small>Pagado</small>
+                            <strong>{money(paidOf(loan))}</strong>
+                          </div>
+                          <div>
+                            <small>Saldo pendiente</small>
+                            <strong className="debt">
+                              {money(balance(loan))}
+                            </strong>
+                          </div>
+                        </div>
+                        {loan.due_date && (
+                          <p
+                            style={late ? { color: LATE_COLOR } : undefined}
+                          >
+                            {late
+                              ? `Vencido el ${dateLabel(loan.due_date)} (hace ${late} día${late === 1 ? '' : 's'})`
+                              : `Vence el ${dateLabel(loan.due_date)}`}
+                          </p>
+                        )}
+                        {loan.notes && <p>Acuerdo: {loan.notes}</p>}
+                      </article>
+                    );
+                  })
                 )}
               </div>
 
               <div className="history-heading">
                 <h3>Historial de movimientos</h3>
-                <span>{selected.history.length} movimientos</span>
+                <span>{history.length} movimientos</span>
               </div>
 
               <div className="history-list">
-                {[...selected.history]
-                  .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id)
-                  .map((item) => (
-                    <article className="history-item" key={item.id}>
-                      <span className="history-dot" />
-                      <div className="history-text">
-                        <strong>{item.type}</strong>
-                        <small>{dateLabel(item.date)}</small>
-                      </div>
-                      <strong
-                        className={
-                          item.type === 'Pago recibido' ? 'positive' : ''
-                        }
-                      >
-                        {item.amount ? money(item.amount) : '—'}
-                      </strong>
-                    </article>
-                  ))}
+                {history.map((item) => (
+                  <article className="history-item" key={item.id}>
+                    <span className="history-dot" />
+                    <div className="history-text">
+                      <strong>{item.type}</strong>
+                      <small>{dateLabel(item.date)}</small>
+                      {item.paymentId && (
+                        <button
+                          style={{ ...linkButton, color: LATE_COLOR }}
+                          onClick={() => removePayment(item.paymentId)}
+                        >
+                          Eliminar pago
+                        </button>
+                      )}
+                    </div>
+                    <strong
+                      className={item.type === 'Pago recibido' ? 'positive' : ''}
+                    >
+                      {item.amount ? money(item.amount) : '—'}
+                    </strong>
+                  </article>
+                ))}
               </div>
             </>
           )}
@@ -467,4 +811,3 @@ export default function App() {
     </main>
   );
 }
-
