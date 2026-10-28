@@ -1,0 +1,534 @@
+
+:root {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  color: #202b3c;
+  background: #f4f6fa;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  font-optical-sizing: auto;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.app-shell {
+  width: min(1440px, 100%);
+  margin: 0 auto;
+  padding: 0 32px 32px;
+}
+
+.topbar {
+  min-height: 78px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e3e8f0;
+  gap: 12px;
+}
+
+.brand,
+.profile-heading,
+.panel-heading,
+.loan-title,
+.history-heading,
+.history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.brand {
+  justify-content: flex-start;
+}
+
+.brand-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  background: #2458a6;
+  color: white;
+  font-weight: 800;
+  font-size: 23px;
+  border-radius: 13px;
+}
+
+.brand strong,
+.brand span {
+  display: block;
+}
+
+.brand span,
+.eyebrow,
+.welcome > p:last-child,
+.stat-card > span,
+.client-item small,
+.loan-title span,
+.loan-grid small,
+.history-item small,
+.history-heading > span,
+footer {
+  color: #788397;
+}
+
+.brand span {
+  margin-top: 3px;
+  font-size: 12px;
+}
+
+.demo-tag {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #8a5a14;
+  background: #fff0d4;
+  border-radius: 20px;
+  padding: 8px 12px;
+}
+
+.welcome {
+  padding: 30px 0 22px;
+}
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.welcome h1 {
+  margin: 8px 0;
+  font-size: clamp(28px, 4vw, 38px);
+  letter-spacing: -1.2px;
+}
+
+.welcome > p:last-child {
+  margin-bottom: 0;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.stat-card,
+.client-panel,
+.detail-panel {
+  background: white;
+  border: 1px solid #e6eaf1;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px #1c31500a;
+}
+
+.stat-card {
+  padding: 20px;
+  min-width: 0;
+}
+
+.stat-card > span,
+.stat-card > strong {
+  display: block;
+}
+
+.stat-card > span {
+  font-size: 12px;
+}
+
+.stat-card > strong {
+  font-size: clamp(19px, 2vw, 26px);
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.9fr) minmax(0, 1.6fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.client-panel,
+.detail-panel {
+  padding: 22px;
+  min-width: 0;
+}
+
+.panel-heading {
+  margin-bottom: 18px;
+}
+
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+.panel-heading h2,
+.detail-panel h3 {
+  font-size: 16px;
+}
+
+.primary-button {
+  border: none;
+  border-radius: 9px;
+  padding: 11px 14px;
+  color: white;
+  background: #2458a6;
+  font-weight: 700;
+}
+
+.primary-button:hover {
+  background: #194780;
+}
+
+.search-input,
+.client-form input,
+.client-form textarea {
+  width: 100%;
+  border: 1px solid #dce2ec;
+  border-radius: 9px;
+  padding: 12px;
+  background: #fff;
+  color: #202b3c;
+  outline: none;
+}
+
+.search-input:focus,
+.client-form input:focus,
+.client-form textarea:focus {
+  border-color: #477bd0;
+  box-shadow: 0 0 0 3px #477bd01c;
+}
+
+.client-list {
+  margin-top: 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.client-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 8px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: white;
+  color: inherit;
+  text-align: left;
+}
+
+.client-item:hover,
+.client-item.selected {
+  background: #f0f5ff;
+  border-color: #d6e3fa;
+}
+
+.avatar {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: #e8effc;
+  color: #2458a6;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.client-item-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.client-item-text strong,
+.client-item-text small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.client-item-text strong {
+  font-size: 13px;
+}
+
+.client-item small {
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+.client-balance {
+  font-size: 12px;
+  font-weight: 750;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.client-form {
+  display: grid;
+  gap: 13px;
+  padding: 15px;
+  margin-top: 14px;
+  background: #f7f9fd;
+  border: 1px solid #e6eaf1;
+  border-radius: 12px;
+}
+
+.client-form h3 {
+  margin-bottom: 0;
+}
+
+.client-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.client-form textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.profile-heading {
+  justify-content: flex-start;
+  padding-bottom: 22px;
+  border-bottom: 1px solid #edf0f5;
+  margin-bottom: 24px;
+  overflow-wrap: anywhere;
+}
+
+.profile-heading h2 {
+  margin: 4px 0;
+  font-size: 23px;
+  overflow-wrap: anywhere;
+}
+
+.profile-heading p:last-child {
+  margin-bottom: 0;
+  color: #788397;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.avatar.large {
+  width: 58px;
+  height: 58px;
+  flex-basis: 58px;
+  font-size: 23px;
+}
+
+.notes-box {
+  padding: 13px;
+  margin-bottom: 22px;
+  background: #f7f9fd;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.notes-box p {
+  margin: 5px 0 0;
+  color: #788397;
+}
+
+.loan-list {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.loan-card {
+  padding: 16px;
+  border: 1px solid #e6eaf1;
+  border-radius: 12px;
+}
+
+.loan-title {
+  margin-bottom: 16px;
+}
+
+.loan-title strong {
+  font-size: 13px;
+}
+
+.loan-title span {
+  font-size: 11px;
+}
+
+.loan-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 12px;
+}
+
+.loan-grid small,
+.loan-grid strong {
+  display: block;
+}
+
+.loan-grid small {
+  font-size: 11px;
+  margin-bottom: 5px;
+}
+
+.loan-grid strong {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.debt {
+  color: #bd5a35;
+}
+
+.history-heading {
+  margin-bottom: 12px;
+}
+
+.history-heading h3 {
+  margin-bottom: 0;
+}
+
+.history-heading > span {
+  font-size: 11px;
+}
+
+.history-list {
+  display: grid;
+}
+
+.history-item {
+  justify-content: flex-start;
+  padding: 15px 0;
+  border-bottom: 1px solid #edf0f5;
+}
+
+.history-item:last-child {
+  border-bottom: 0;
+}
+
+.history-dot {
+  flex: 0 0 10px;
+  width: 10px;
+  height: 10px;
+  background: #477bd0;
+  border-radius: 50%;
+}
+
+.history-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-text strong,
+.history-text small {
+  display: block;
+}
+
+.history-text strong {
+  font-size: 13px;
+}
+
+.history-item small {
+  margin-top: 5px;
+  font-size: 11px;
+}
+
+.history-item > strong {
+  font-size: 12px;
+  text-align: right;
+}
+
+.positive {
+  color: #17834c;
+}
+
+.empty-state,
+.empty-detail {
+  padding: 22px;
+  color: #788397;
+  text-align: center;
+  font-size: 13px;
+}
+
+.empty-detail {
+  padding: 60px 10px;
+}
+
+.empty-detail h2 {
+  color: #202b3c;
+}
+
+.large-icon {
+  font-size: 40px;
+}
+
+footer {
+  padding: 24px 0 0;
+  text-align: center;
+  font-size: 11px;
+}
+
+@media (max-width: 850px) {
+  .app-shell {
+    padding: 0 16px 24px;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .stats {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .stat-card {
+    padding: 15px;
+  }
+
+  .stat-card > strong {
+    margin-top: 7px;
+  }
+}
+
+@media (max-width: 420px) {
+  .client-panel,
+  .detail-panel {
+    padding: 14px;
+  }
+
+  .client-balance {
+    max-width: 95px;
+    font-size: 11px;
+  }
+
+  .loan-card {
+    padding: 12px;
+  }
+
+  .profile-heading h2 {
+    font-size: 19px;
+  }
+}
